@@ -15,6 +15,13 @@ function parseRoute() {
 async function route() {
   const { seg, params } = parseRoute();
   root.innerHTML = "";
+  if (seg[0] === "dashboard") {
+    const ct = params.get("ct");
+    if (!ct) { root.innerHTML = `<main><p>需要 committer token。</p></main>`; return; }
+    const { renderDashboard } = await import("./dashboard.js");
+    await renderDashboard(root, ct);
+    return;
+  }
   if (seg[0] === "pr" && seg[1] && seg[2]) {
     const repo = decodeURIComponent(seg[1]);
     const pr = seg[2];
