@@ -1,0 +1,10 @@
+name = "code-review-check"
+main = "src/index.ts"
+compatibility_date = "2025-05-01"
+
+# Set after `wrangler d1 create` (Task 9). Local dev uses the local D1 mirror.
+[[d1_databases]]
+binding = "DB"
+database_name = "code-review-check"
+database_id = "REPLACE_WITH_D1_ID"
+migrations_dir = "migrations"
