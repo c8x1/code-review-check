@@ -1,4 +1,4 @@
-import { D1Store, type QuizStore, type QuizRow } from "./store";
+import { D1Store, type QuizStore, type QuizRow, type ResultRow } from "./store";
 
 export interface Env {
   DB: D1Database;
@@ -28,10 +28,16 @@ export async function handleRequest(
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
     if (url.pathname === "/api/quiz" && req.method === "GET") return await getQuiz(url, store);
+    if (url.pathname === "/api/submit" && req.method === "POST") return await submit(req, store);
     if (url.pathname === "/admin/quiz" && req.method === "POST") {
       const g = guard(req, env);
       if (g) return g;
       return await register(req, store);
+    }
+    if (url.pathname === "/admin/results" && req.method === "GET") {
+      const g = guard(req, env);
+      if (g) return g;
+      return Response.json(await store.listAll(), { headers: CORS });
     }
     return Response.json({ error: "not found" }, { status: 404, headers: CORS });
   } catch (e) {
@@ -76,6 +82,43 @@ async function register(req: Request, store: QuizStore): Promise<Response> {
     }
   }
   return Response.json({ token: row.token, quiz_data_url: row.quiz_data_url }, { status: 201, headers: CORS });
+}
+
+async function submit(req: Request, store: QuizStore): Promise<Response> {
+  const b = (await req.json()) as {
+    token: string;
+    gitcode_username: string;
+    answers: Record<string, string>;
+    score: number;
+    answered: number;
+    total: number;
+    missed_behavior_ids: string[];
+    missed_question_ids: string[];
+  };
+  const q = await store.getQuizByToken(b.token);
+  if (!q) return Response.json({ error: "unknown token" }, { status: 404, headers: CORS });
+  if (b.gitcode_username !== q.author) {
+    return Response.json({ error: "submitter is not the PR author" }, { status: 403, headers: CORS });
+  }
+  const row: ResultRow = {
+    repo: q.repo, pr: q.pr, head_sha: q.head_sha, gitcode_username: b.gitcode_username,
+    score: b.score, answered: b.answered, total: b.total,
+    missed_behavior_ids: JSON.stringify(b.missed_behavior_ids),
+    missed_question_ids: JSON.stringify(b.missed_question_ids),
+    submitted_at: new Date().toISOString(),
+  };
+  const out = await store.insertResult(row);
+  if (out.conflict) {
+    return Response.json(
+      { error: "already submitted; only the first attempt per version is recorded" },
+      { status: 410, headers: CORS }
+    );
+  }
+  const terminal = b.score === b.total ? "cleared" : "re-read";
+  return Response.json(
+    { score: b.score, total: b.total, terminal, missed_behaviors: b.missed_behavior_ids },
+    { status: 201, headers: CORS }
+  );
 }
 
 export default {
