@@ -34,8 +34,10 @@ async function route() {
       alreadySubmitted = !!meta.has_result;
       data = await loadQuizData(meta.quiz_data_url);
     } else {
-      // read-only fallback to sample data (relative so it works locally and on Pages)
-      data = await loadQuizData(`data/sample/${pr}-abc1234.json`);
+      // read-only: explicit data path (?d=...) for preview without the Worker,
+      // else fall back to sample data (relative so it works locally and on Pages)
+      const dpath = params.get("d");
+      data = await loadQuizData(dpath ? decodeURIComponent(dpath) : `data/sample/${pr}-abc1234.json`);
     }
     if (!data) { root.innerHTML = `<main><p>quiz 数据未就绪。</p></main>`; return; }
     const main = document.createElement("main");
