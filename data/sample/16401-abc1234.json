@@ -1,0 +1,31 @@
+{
+  "repo": "openharmony/multimedia_audio_framework",
+  "pr_number": 16401,
+  "author": "xiaokuerz",
+  "head_sha": "abc1234",
+  "report": {
+    "context": "本 PR 修复了 AudioPolicy 在设备切换时的音量泄漏问题。",
+    "intuition": "旧实现依赖 setStreamVolume 在设备变更前同步刷一次,但新设备 HDI 尚未 ready 时该调用会被丢弃。",
+    "what_was_done": "在 OnAudioDeviceChange 回调里新增 50ms debounce,确认 HDI ready 后再 setStreamVolume。",
+    "non_obvious_behaviors": [
+      { "id": "b1", "what": "debounce 计时器在 service 退出时不会自动取消", "why": "service 退出时 SetVolume 跑在已释放的上下文", "where": "services/audio_policy/server/audio_policy_service.cpp:142" },
+      { "id": "b2", "what": "HDI ready 检查只看 renderer,capturer 路径不查", "why": "录音场景设备切换仍会丢音量", "where": "services/audio_policy/server/audio_policy_service.cpp:88" }
+    ],
+    "inherited_dependency": { "what": "依赖旧 SetVolume 的幂等性", "where": "frameworks/native/audiorenderer/audio_renderer.cpp:300" }
+  },
+  "quiz": {
+    "questions": [
+      { "id": "q1", "type": "scenario", "prompt": "用户在录音时切换设备后音量异常,根因最可能是?",
+        "options": [ { "id": "a", "text": "debounce 没启动" }, { "id": "b", "text": "capturer 路径未检查 HDI ready" }, { "id": "c", "text": "setStreamVolume 返回错误码" } ],
+        "correct_option": "b", "tests_behavior_id": "b2",
+        "excerpt": "HDI ready 检查只看 renderer,capturer 路径不查",
+        "section_anchor": "#behav-b2", "reinforce": "对,b2 指出 capturer 路径未受保护。" },
+      { "id": "q2", "type": "scenario", "prompt": "service 异常退出后用户报告崩溃,指向哪条?",
+        "options": [ { "id": "a", "text": "计时器未取消,跑在已释放上下文" }, { "id": "b", "text": "音量值越界" } ],
+        "correct_option": "a", "tests_behavior_id": "b1",
+        "excerpt": "debounce 计时器在 service 退出时不会自动取消",
+        "section_anchor": "#behav-b1", "reinforce": "对,b1 的关键风险。" }
+    ],
+    "hard_gate_question_ids": ["q1", "q2"]
+  }
+}

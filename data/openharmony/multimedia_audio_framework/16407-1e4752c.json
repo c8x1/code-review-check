@@ -1,0 +1,102 @@
+{
+  "repo": "openharmony/multimedia_audio_framework",
+  "pr_number": 16407,
+  "author": "Lzh87048",
+  "head_sha": "1e4752c472f3",
+  "report": {
+    "context": "空间音频状态监听注册路径此前没有死亡通知:客户端进程崩溃或异常退出而未显式调用 UnregisterSpatializationStateEventListener 时,其 callback 仍留在 spatializationStateCBMap_ 中,HandleSpatializationStateChange 仍会向已死的代理派发,造成对死代理的调用/use-after-free。本 PR 在 Register 流程挂一个 AudioSpatializationStateDeathRecipient,客户端死亡时自动走 Unregister 清理,使陈旧/死代理不再被派发。",
+    "intuition": "把'显式注销'和'隐式死亡清理'收敛到同一条 erase 路径上。死亡接收者只是触发器,callback 析构才是真正的副作用落地点——map 项被擦除才会销毁 callback,callback 析构才 RemoveDeathRecipient 摘除自己挂在 object 上的死亡接收者。因此死亡通知并不引入第二条清理逻辑,而是复用既有注销路径。",
+    "what_was_done": "头文件新增 AudioSpatializationStateDeathRecipient(IRemoteObject::DeathRecipient 派生),持有 service_ 原始指针 + sessionID_ 值,OnRemoteDied 调 service_->UnregisterSpatializationStateEventListener(sessionID_)。Register 里 new 出 deathRecipient、object->AddDeathRecipient(deathRecipient),并把 object 与 deathRecipient 一并传入 callback 构造;callback 新增 object_/deathRecipient_ 两个 sptr 成员,析构里 object_->RemoveDeathRecipient(deathRecipient_)。UnregisterSpatializationStateEventListener 未改动,仍是加锁后 spatializationStateCBMap_.erase(sessionID)。",
+    "non_obvious_behaviors": [
+      {
+        "id": "b1",
+        "what": "OnRemoteDied 不直接操作 map,而是调用 UnregisterSpatializationStateEventListener;真正的 RemoveDeathRecipient 发生在 map 擦除后旧 callback 的析构里,而非 OnRemoteDied 内。死亡清理复用了既有加锁 erase 路径。",
+        "why": "若在 OnRemoteDied 里绕过 Unregister 直接 erase,就跳过了 spatializationStateChangeListnerMutex_,与 Register/HandleSpatializationStateChange 的 map 迭代产生数据竞争;复用同一加锁路径才能保证清理与派发互斥。",
+        "where": "audio_spatialization_service.cpp:523"
+      },
+      {
+        "id": "b2",
+        "what": "Register 不显式检查/移除同一 sessionID 的旧条目,直接 spatializationStateCBMap_[sessionID] = ... 覆盖。重复注册的正确性依赖旧 callback 被覆盖销毁时,其析构 RemoveDeathRecipient 摘除挂在 object 上的旧死亡接收者。",
+        "why": "若析构没有 RemoveDeathRecipient,同一 object 重复注册会累积多个 death recipient,客户端死亡时多个接收者都触发,造成多次 Unregister/重复 erase;当前设计把'摘除旧接收者'的职责压在 callback 析构上。",
+        "where": "audio_spatialization_service.cpp:541"
+      },
+      {
+        "id": "b3",
+        "what": "死亡接收者缓存 service_ 原始指针 + sessionID_ 值,OnRemoteDied 不校验 sessionID_ 是否仍在 map 中即调 Unregister。其安全性依赖 UnregisterSpatializationStateEventListener 的 erase 对缺失键是 no-op。",
+        "why": "显式注销与死亡通知可能竞争:显式 Unregister 已擦除条目后,死亡接收者仍可能晚到并再次调 Unregister。erase 对缺失键无副作用,因此不会破坏 map;但这要求 Unregister 永远只做 erase、不附加上不可幂等的副作用。",
+        "where": "audio_spatialization_service.cpp:523"
+      },
+      {
+        "id": "b4",
+        "what": "callback 额外持有 object_ 与 deathRecipient_ 两个 sptr,唯一目的是在析构里 object_->RemoveDeathRecipient(deathRecipient_),打断 object↔deathRecipient 的引用,避免显式注销后死亡接收者仍挂在 object 上误触发。",
+        "why": "AddDeathRecipient 会让 object 持有 deathRecipient;若 callback 不在析构时摘除,object 会一直持有到自身销毁,显式 Unregister 后客户端虽已注销,object 一旦死亡仍会回调已无关的 OnRemoteDied。析构摘除是这条链路的收尾不变量。",
+        "where": "audio_spatialization_state_change_callback.cpp:35"
+      }
+    ],
+    "inherited_dependency": {
+      "what": "死亡清理完全复用既有的 UnregisterSpatializationStateEventListener(加锁后 spatializationStateCBMap_.erase(sessionID)),并依赖 spatializationStateCBMap_ 项生命周期(callback shared_ptr 销毁)来驱动 RemoveDeathRecipient;未引入独立的死亡态清理逻辑。即死亡通知的正确性挂在'既有注销路径只做幂等 erase + map 项析构链'这一既有契约上。",
+      "where": "audio_spatialization_service.cpp:552"
+    }
+  },
+  "quiz": {
+    "questions": [
+      {
+        "id": "q1",
+        "type": "scenario",
+        "prompt": "评审建议:OnRemoteDied 里别再调 service_->UnregisterSpatializationStateEventListener(sessionID_),直接 spatializationStateCBMap_.erase(sessionID_) '少一跳更高效'。接受该建议会破坏什么契约?",
+        "options": [
+          {"id": "a", "text": "不破坏任何契约,erase 与 Unregister 等价,只是少一次函数调用。"},
+          {"id": "b", "text": "破坏加锁契约:UnregisterSpatializationStateEventListener 加锁 spatializationStateChangeListnerMutex_ 再 erase;OnRemoteDied 在 binder 线程直接 erase 会与 Register/HandleSpatializationStateChange 的 map 迭代竞争。", "correct": true}
+        ],
+        "correct_option": "b",
+        "tests_behavior_id": "b1",
+        "excerpt": "死亡清理复用 UnregisterSpatializationStateEventListener,它加锁 spatializationStateChangeListnerMutex_ 再 erase;若在 OnRemoteDied 绕过它直接 erase 就跳过了该锁。",
+        "section_anchor": "#behav-b1",
+        "reinforce": "对:死亡清理的'复用同一条加锁 erase 路径'正是 b1 的核心不变量。OnRemoteDied 只负责触发,真正的 erase 必须经 Unregister 走锁,否则与派发/注册侧的 map 迭代竞争。"
+      },
+      {
+        "id": "q2",
+        "type": "scenario",
+        "prompt": "客户端用同一 sessionID、同一 object 重复调用 RegisterSpatializationStateEventListener(例如重初始化)。本 PR 之后,什么机制保证旧 death recipient 不会残留在 object 上、死亡时重复触发?",
+        "options": [
+          {"id": "a", "text": "Register 在添加新 death recipient 前,显式检查并移除该 sessionID 旧条目对应的旧 death recipient。"},
+          {"id": "b", "text": "Register 不显式移除;map[id] 覆盖使旧 callback 销毁,其析构 RemoveDeathRecipient 摘除挂在 object 上的旧 death recipient。", "correct": true}
+        ],
+        "correct_option": "b",
+        "tests_behavior_id": "b2",
+        "excerpt": "Register 不显式移除旧条目,直接 map[id] 覆盖;正确性依赖旧 callback 析构时 RemoveDeathRecipient 摘除旧死亡接收者。",
+        "section_anchor": "#behav-b2",
+        "reinforce": "对:重复注册的清理职责被压在旧 callback 的析构上(b2)。若析构没摘除,同一 object 会累积多个 death recipient,死亡时多次 Unregister。"
+      },
+      {
+        "id": "q3",
+        "type": "scenario",
+        "prompt": "显式 UnregisterSpatializationStateEventListener 已擦除某 sessionID 条目后,客户端进程随后才崩溃,OnRemoteDied 仍被触发并对该 sessionID 再调一次 Unregister。当前实现为何安全?",
+        "options": [
+          {"id": "a", "text": "不安全:对已不存在的 sessionID 调 Unregister 会破坏 map,必须先校验 sessionID 是否在 map 中。"},
+          {"id": "b", "text": "安全:Unregister 只做 spatializationStateCBMap_.erase(sessionID),对缺失键是 no-op,故死亡通知晚到不会产生副作用。", "correct": true}
+        ],
+        "correct_option": "b",
+        "tests_behavior_id": "b3",
+        "excerpt": "OnRemoteDied 不校验 sessionID 是否仍在 map 即调 Unregister;其安全性依赖 erase 对缺失键是 no-op。",
+        "section_anchor": "#behav-b3",
+        "reinforce": "对:这正是 b3 依赖的幂等契约——Unregister 必须只做幂等 erase。一旦未来给 Unregister 加上不可幂等的副作用(如记日志计数、发事件),死亡晚到就会重复触发,契约即破。"
+      },
+      {
+        "id": "q4",
+        "type": "scenario",
+        "prompt": "callback 已持有 listener_,为何还要额外存 object_ 与 deathRecipient_ 两个 sptr?删掉它们、析构里只打日志会引入什么回归?",
+        "options": [
+          {"id": "a", "text": "无回归,这两个成员仅为调试日志保留,删掉不影响正确性。"},
+          {"id": "b", "text": "回归:析构不再 RemoveDeathRecipient,object 持续持有 death recipient,显式 Unregister 后 object 一旦死亡仍会回调 OnRemoteDied,误触发已无关的清理。", "correct": true}
+        ],
+        "correct_option": "b",
+        "tests_behavior_id": "b4",
+        "excerpt": "callback 持有 object_/deathRecipient_ 唯一目的是析构里 RemoveDeathRecipient,打断 object↔deathRecipient 引用,避免显式注销后死亡接收者仍残留误触发。",
+        "section_anchor": "#behav-b4",
+        "reinforce": "对:析构 RemoveDeathRecipient 是 b4 的收尾不变量,打断 object↔deathRecipient 引用。删掉它,显式注销后死亡接收者仍挂在 object 上,死亡时仍回调,清理路径被错误重入。"
+      }
+    ],
+    "hard_gate_question_ids": ["q1", "q2"]
+  }
+}
