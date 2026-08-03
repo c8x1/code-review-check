@@ -1,0 +1,183 @@
+{
+  "repo": "openharmony/multimedia_audio_framework",
+  "pr_number": 16512,
+  "author": "acorwa",
+  "head_sha": "85fb23d602b4b0d33554694b7ac2a02ebf2c1550",
+  "title": "audio engine 在 session effect 预热期间不强制灌数据",
+  "questions": [
+    {
+      "id": "q1",
+      "code": "    stopRequested_ = false;\n    NotifyPreheatStateChanged(true); // set flag before spawn so the thread cannot pull before it takes effect\n    preheatThread_ = std::thread(&HpaeSessionEffectNode::PreheatThreadFunc, this);",
+      "file": "services/audio_engine/node/src/hpae_session_effect_node.cpp",
+      "lines": "668-670",
+      "language": "cpp",
+      "prompt": "NotifyPreheatStateChanged(true) 被刻意放在 std::thread spawn 之前调用。如果把这一行移到 std::thread(...) 那行之后（即先 spawn 再通知），会出现什么问题？",
+      "options": [
+        {
+          "id": "a",
+          "text": "新 spawn 的 preheat 线程可能在 sessionEffectPreheatActive_ 被置 true 之前就开始跑，期间 OnStreamInfoChange 仍会 forceData，灌数据的窗口没被关上，本 PR 的目的失效。"
+        },
+        {
+          "id": "b",
+          "text": "会产生死锁，preheat 线程会一直等待 callback 被设置。"
+        },
+        {
+          "id": "c",
+          "text": "没有可观察的区别，因为线程调度本就是非确定性的。"
+        },
+        {
+          "id": "d",
+          "text": "callback 会被改在 preheat 线程上执行而不是 manager 线程。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：置位发生在 spawn 之前，保证线程一旦跑起来 flag 已为 true，没有 forceData 的空窗。放后面则存在“线程已开始拉数、flag 尚未置位”的竞态。线程调度非确定性不能为这个竞态开脱——正是因为非确定性才必须先置位。b/c/d 都与代码实际行为不符：没有锁等待、确有行为差异、执行线程取决于 SendRequest 而非调用点。",
+      "reinforce": "对——置位必须在 spawn 前，杜绝 preheat 线程启动后到 flag 生效前的灌数据空窗。"
+    },
+    {
+      "id": "q2",
+      "code": "    bool needData = !(historyBuffer_ && historyBuffer_->GetCurFrames()) && isPullData;\n    // offload / direct / non-standard sample rate / SE preheating: never force data\n    bool forceData = (offloadEnable_ || isDirect_ || isNonStandardSampleRate_\n                      || sessionEffectPreheatActive_) ? false : true;",
+      "file": "services/audio_engine/node/src/hpae_sink_input_node.cpp",
+      "lines": "393-396",
+      "language": "cpp",
+      "prompt": "SE 预热期间（sessionEffectPreheatActive_==true），若 isPullData==true 且 historyBuffer_ 为空/无帧，needData 与 forceData 各为何值？这对 OnStreamData 回调意味着什么？",
+      "options": [
+        {
+          "id": "a",
+          "text": "needData=true、forceData=false：表示可以拉数据，但引擎不会强制灌/补静音——客户端有数据就给，没有也不强制填充。"
+        },
+        {
+          "id": "b",
+          "text": "needData=true、forceData=true：和正常路径一样会强制灌数据。"
+        },
+        {
+          "id": "c",
+          "text": "needData=false、forceData=false：完全跳过拉数据。"
+        },
+        {
+          "id": "d",
+          "text": "needData=false、forceData=true：引擎注入静音到缓冲区。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：needData 的计算与 forceData 独立，preheat 只把 forceData 改为 false，needData 仍由 historyBuffer/isPullData 决定，故 needData=true、forceData=false。这正是“预热期不强制灌数据但仍可拉”的语义。b 错（forceData 被新条件压成 false）；c/d 错（needData 不会被 preheat 改成 false，forceData 也不会变 true）。",
+      "reinforce": "对——preheat 关的是 forceData，不是 needData；拉数据照常、强制填充关掉。"
+    },
+    {
+      "id": "q3",
+      "code": "    rawBypassNeeded_ = rawBypassNeeded_ || stopRequested_;\n    prebufFilled_.store(true);\n    NotifyPreheatStateChanged(false); // covers both prebuf-filled completion and stopRequested exit\n    AUDIO_INFO_LOG(\"PreheatThread exiting, stopRequested=%{public}d\", stopRequested_.load());",
+      "file": "services/audio_engine/node/src/hpae_session_effect_node.cpp",
+      "lines": "720-723",
+      "language": "cpp",
+      "prompt": "为什么在 PreheatThreadFunc 末尾只放一个 NotifyPreheatStateChanged(false)，就能同时覆盖“prebuf 填满正常完成”和“stopRequested_ 提前退出”两条路径？",
+      "options": [
+        {
+          "id": "a",
+          "text": "两条路径最终都会汇聚到函数末尾这一行再退出，所以无论哪种退出原因 flag 都会被清一次。"
+        },
+        {
+          "id": "b",
+          "text": "因为上面那行 rawBypassNeeded_ = rawBypassNeeded_ || stopRequested_ 只有在两条路径等价时才会往下走。"
+        },
+        {
+          "id": "c",
+          "text": "prebuf 填满那条路径在到达此行前就 return 了，所以它依赖另一个单独的 false 通知。"
+        },
+        {
+          "id": "d",
+          "text": "RestartPreheat 会为 stop 路径单独发一次 false 通知，这里只负责正常完成路径。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：PreheatThreadFunc 不论是正常填满后走出循环、还是被 stopRequested_ 提前跳出，都会落到函数末尾这同一行，所以一个 false 通知覆盖两种退出。b 误读了那行赋值的语义；c 与代码相悖（没有提前 return 跳过此行）；d 无依据，RestartPreheat 并不发 false 通知。",
+      "reinforce": "对——单点收尾通知之所以够用，是因为两条退出路径在此行汇聚。"
+    },
+    {
+      "id": "q4",
+      "code": "void HpaeRendererManager::OnSessionEffectPreheatStateChanged(uint32_t sessionId, bool active)\n{\n    auto request = [this, sessionId, active]() {\n        auto sinkInputNode = SafeGetMap(sinkInputNodeMap_, sessionId);\n        CHECK_AND_RETURN_LOG(sinkInputNode != nullptr,\n            \"OnSessionEffectPreheatStateChanged: sinkInputNode not found, session=%{public}u\", sessionId);\n        sinkInputNode->SetSessionEffectPreheatActive(active);\n    };\n    SendRequest(request, __func__);\n}",
+      "file": "services/audio_engine/manager/src/hpae_renderer_manager_session_effect.cpp",
+      "lines": "72-83",
+      "language": "cpp",
+      "prompt": "该 override 把实际 SetSessionEffectPreheatActive 调用通过 SendRequest 延后执行，而非在回调现场内联调用。如果某个 session 在回调触发后、延后请求真正执行前被销毁（map 移除该 entry），会发生什么？",
+      "options": [
+        {
+          "id": "a",
+          "text": "SafeGetMap 返回 nullptr，CHECK_AND_RETURN_LOG 记日志后直接返回，不会触碰悬空节点——是一次安全的空操作。"
+        },
+        {
+          "id": "b",
+          "text": "sinkInputNode 指针已悬空，对其调用 SetSessionEffectPreheatActive 会 use-after-free。"
+        },
+        {
+          "id": "c",
+          "text": "会把 active 置到另一个 session 的节点上。"
+        },
+        {
+          "id": "d",
+          "text": "lambda 抛异常使请求线程崩溃。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：sessionId/active 按值捕获（不持有节点指针），实际查找发生在请求执行时；若节点已被移除，SafeGetMap 返 nullptr，CHECK_AND_RETURN_LOG 拦截后安全返回，无悬空访问。b/c/d 都与“按值捕获 + 运行期再查 map + 空检查”的设计相悖。",
+      "reinforce": "对——按值捕获 sessionId，运行期再查 map 并做空检查，天然规避销毁竞态。"
+    },
+    {
+      "id": "q5",
+      "code": "    EXPECT_CALL(*mockInst_, GetPreheatFrames()).WillOnce(testing::Return(0));\n    EXPECT_CALL(*mockCallback_, OnSessionEffectPreheatStateChanged(testing::_, testing::_)).Times(0);\n\n    node_->CreateEffectWithInstance(\"test_effect\", mockInst_, config_);\n    EXPECT_EQ(node_->StartEffect(), 0);\n    ASSERT_EQ(node_->GetStatus(), HpaeSessionEffectNode::STATUS::WARMING_UP);\n    EXPECT_EQ(node_->GetPrebufTargetBytes(), 0u);",
+      "file": "services/audio_engine/test/unittest/node/hpae_session_effect_node_test.cpp",
+      "lines": "725-734",
+      "language": "cpp",
+      "prompt": "当 GetPreheatFrames() 返回 0 时，该测试断言 OnSessionEffectPreheatStateChanged 调用次数为 0。但实现里 NotifyPreheatStateChanged(true) 是写在 StartPreheatThread 中的。为什么这里零次回调是正确的？",
+      "options": [
+        {
+          "id": "a",
+          "text": "prebufTargetBytes==0 时 StartPreheatThread 根本不会被调用，因此 true/false 两个通知都不会发出。"
+        },
+        {
+          "id": "b",
+          "text": "GetPreheatFrames==0 会让 NotifyPreheatStateChanged 内部短路，自己不发回调。"
+        },
+        {
+          "id": "c",
+          "text": "回调其实发了一次，只是 gmock 的 Times(0) 把它吞掉了。"
+        },
+        {
+          "id": "d",
+          "text": "StartEffect 会返回非 0 提前返回，根本到不了 preheat 线程那一步。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：通知只发生在 StartPreheatThread 内；prebufTargetBytes==0（即无需预热）时不会 spawn 预热线程，于是 StartPreheatThread 不被调用，true 与 false 都不会发，Times(0) 成立。b 无依据（NotifyPreheatStateChanged 不看 frames）；c 错（gmock Times(0) 遇到实际调用会失败而非吞掉）；d 与断言 StartEffect()==0、状态 WARMING_UP 相悖。",
+      "reinforce": "对——没有预热线程就没有通知；prebufTargetBytes==0 是“不发回调”的根因。"
+    },
+    {
+      "id": "q6",
+      "code": "    // upmix -6dB: attenuate output channels that have no matching input channel (e.g. stereo -> 5.1 spill).\n    // must be set before SetParam so UpmixGainAttenuation takes effect; mono upmix is exempt (numChannels == 1),\n    // and downmix is unaffected (UpmixGainAttenuation only runs on the upmix path).\n    channelConverter_.SetUpmixCoef(COEF_M6DB_F);\n    // for now, work at float32le by default\n    channelConverter_.SetParam(inChannelInfo, outChannelInfo, SAMPLE_F32LE, true);",
+      "file": "services/audio_engine/node/src/hpae_audio_format_converter_node.cpp",
+      "lines": "60-66",
+      "language": "cpp",
+      "prompt": "注释说 SetUpmixCoef 必须在 SetParam 之前调用，否则 UpmixGainAttenuation 不生效。若把两行顺序对调（先 SetParam 再 SetUpmixCoef），对一次 stereo→5.1 的 upmix 会有什么可观察后果？",
+      "options": [
+        {
+          "id": "a",
+          "text": "UpmixGainAttenuation 不生效，没有匹配输入通道的输出通道保持满增益而非 -6dB 衰减。"
+        },
+        {
+          "id": "b",
+          "text": "无影响，SetParam 在处理时才惰性读取系数。"
+        },
+        {
+          "id": "c",
+          "text": "downmix 也会被错误衰减。"
+        },
+        {
+          "id": "d",
+          "text": "converter 会因 SetParam 时系数未设置而崩溃。"
+        }
+      ],
+      "correct_option": "a",
+      "explanation": "正确：SetParam 会基于当前系数配置 UpmixGainAttenuation；先 SetParam 则用的是默认/旧系数，-6dB 衰减不生效，无匹配输入的输出通道保持满增益（这正是注释警示的 spill 问题）。b 与注释明示的“must be set before”相悖；c 错（UpmixGainAttenuation 只在 upmix 路径，downmix 不受影响，注释已说明）；d 无依据，不会崩溃，只是衰减没起作用。",
+      "reinforce": "对——顺序对调会让 -6dB 衰减静默失效，stereo→5.1 spill 不被衰减。"
+    }
+  ]
+}
