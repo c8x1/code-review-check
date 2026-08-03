@@ -66,6 +66,9 @@ export function renderQuiz(container, data, { token, onSubmit }) {
     prompt.textContent = q.prompt;
     block.appendChild(prompt);
 
+    const opts = document.createElement("div");
+    opts.className = "opts";
+    block.appendChild(opts);
     for (const opt of q.options) {
       const btn = document.createElement("button");
       btn.className = "opt";
@@ -101,7 +104,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
           `Score: ${g.score} / ${qs.length} · ${answered} answered`;
         if (answered === qs.length) renderTerminal(container, qs, answers, onSubmit, token);
       });
-      block.appendChild(btn);
+      opts.appendChild(btn);
     }
     container.appendChild(block);
   }

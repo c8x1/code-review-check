@@ -7,7 +7,7 @@
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
-main{max-width:760px;margin:0 auto;padding:0 14px 60px}
+main{max-width:1100px;margin:0 auto;padding:0 16px 60px}
 h1{font-size:15px;font-weight:600;margin:0 0 4px}
 a{color:var(--no);text-decoration:none}
 
@@ -21,18 +21,20 @@ a{color:var(--no);text-decoration:none}
   padding:10px 12px;margin:10px 0}
 .qlabel{font:12px var(--mono);color:var(--mute);margin-bottom:6px}
 pre.code{background:var(--code-bg);color:var(--code-ink);font:13px/1.5 var(--mono);
-  padding:10px 12px;border-radius:6px;overflow-x:auto;max-height:340px;margin:0 0 8px}
+  padding:10px 12px;border-radius:6px;overflow-x:auto;margin:0 0 8px;white-space:pre}
 .prompt{font-size:14px;margin:4px 0 8px}
 
-.opt{display:block;width:100%;text-align:left;margin:5px 0;padding:7px 10px;
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+.opt{display:block;text-align:left;margin:0;padding:8px 10px;
   border:1px solid var(--line);border-radius:5px;background:var(--paper);
-  cursor:pointer;font:13px/1.4 var(--sans);color:var(--ink)}
+  cursor:pointer;font:13px/1.4 var(--sans);color:var(--ink);overflow:hidden;text-overflow:ellipsis}
 .opt:hover{border-color:var(--mute)}
 .opt:disabled{cursor:default}
 .opt.correct{border-color:var(--ok);background:rgba(63,185,80,.12);color:var(--ok)}
 .opt.wrong{border-color:var(--no);background:rgba(248,81,73,.10);color:var(--no)}
 .opt.submit{margin-top:10px;border-color:var(--no);color:var(--no);font-weight:600}
-
+.opt.copy{margin-top:10px;border-color:var(--mute);color:var(--mute)}
+.opt.copy:hover{border-color:var(--ink);color:var(--ink)}
 .feedback{font:12.5px/1.5 var(--sans);margin-top:8px;padding:6px 10px;
   border-left:3px solid var(--no);background:#f4f4f6;border-radius:0 4px 4px 0}
 .feedback .why{color:var(--ink)}
@@ -47,5 +49,3 @@ pre.code{background:var(--code-bg);color:var(--code-ink);font:13px/1.5 var(--mon
 .chip{font:12px var(--mono);padding:3px 7px;border-radius:4px;border:1px solid var(--line)}
 .chip.ok{color:var(--ok);border-color:var(--ok);background:rgba(63,185,80,.10)}
 .chip.no{color:var(--no);border-color:var(--no);background:rgba(248,81,73,.08)}
-.opt.copy{border-color:var(--mute);color:var(--mute)}
-.opt.copy:hover{border-color:var(--ink);color:var(--ink)}
