@@ -102,7 +102,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
         const g = gradeQuiz(qs, answers);
         document.getElementById("scorebox").textContent =
           `Score: ${g.score} / ${qs.length} · ${answered} answered`;
-        if (answered === qs.length) renderTerminal(container, qs, answers, onSubmit, token);
+        if (answered === qs.length) renderTerminal(container, data, qs, answers, onSubmit, token);
       });
       opts.appendChild(btn);
     }
@@ -110,7 +110,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
   }
 }
 
-function renderTerminal(container, qs, answers, onSubmit, token) {
+function renderTerminal(container, data, qs, answers, onSubmit, token) {
   const g = gradeQuiz(qs, answers);
   const card = document.createElement("section");
   card.className = "q terminal";
@@ -138,9 +138,24 @@ function renderTerminal(container, qs, answers, onSubmit, token) {
   copy.textContent = "复制为 PR 评论";
   copy.addEventListener("click", () => {
     const md = buildPrComment(data, qs, answers, g);
-    navigator.clipboard.writeText(md).then(
-      () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); },
-      () => alert("复制失败,请手动选择下方文本。"));
+    const done = () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); };
+    const fallback = () => {
+      // clipboard API failed (non-secure context / permissions): show a box to copy manually
+      let box = card.querySelector("pre.copybox");
+      if (!box) {
+        box = document.createElement("pre");
+        box.className = "copybox";
+        card.appendChild(box);
+      }
+      box.textContent = md;
+      box.hidden = false;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      sel.removeAllRanges(); sel.addRange(range);
+      copy.textContent = "已选中,按 Ctrl/Cmd+C 复制";
+    };
+    copyTextToClipboard(md, done, fallback);
   });
   card.appendChild(copy);
 
@@ -163,6 +178,34 @@ function renderTerminal(container, qs, answers, onSubmit, token) {
   });
   card.appendChild(submit);
   container.appendChild(card);
+}
+
+function copyTextToClipboard(text, onOk, onFallback) {
+  // Prefer the async clipboard API (HTTPS / secure context). Fall back to a
+  // hidden textarea + execCommand, then to a visible box the user selects.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk, () => execCopy(text, onOk, onFallback));
+  } else {
+    execCopy(text, onOk, onFallback);
+  }
+}
+
+function execCopy(text, onOk, onFallback) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) onOk();
+    else onFallback();
+  } catch (e) {
+    onFallback();
+  }
 }
 
 function buildPrComment(data, qs, answers, g) {

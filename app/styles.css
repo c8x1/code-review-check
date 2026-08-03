@@ -35,6 +35,8 @@ pre.code{background:var(--code-bg);color:var(--code-ink);font:13px/1.5 var(--mon
 .opt.submit{margin-top:10px;border-color:var(--no);color:var(--no);font-weight:600}
 .opt.copy{margin-top:10px;border-color:var(--mute);color:var(--mute)}
 .opt.copy:hover{border-color:var(--ink);color:var(--ink)}
+.copybox{background:var(--code-bg);color:var(--code-ink);font:12px/1.5 var(--mono);
+  padding:10px 12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;margin-top:8px}
 .feedback{font:12.5px/1.5 var(--sans);margin-top:8px;padding:6px 10px;
   border-left:3px solid var(--no);background:#f4f4f6;border-radius:0 4px 4px 0}
 .feedback .why{color:var(--ink)}
