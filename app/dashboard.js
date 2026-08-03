@@ -1,5 +1,8 @@
 import { getResults } from "./api.js";
-import { escapeHtml } from "./report.js";
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
 
 export async function renderDashboard(root, committer_token) {
   const rows = await getResults(committer_token);
@@ -9,31 +12,19 @@ export async function renderDashboard(root, committer_token) {
   }
   const cards = rows
     .map(({ quiz, result }) => {
-      const missed = result ? safeParse(result.missed_behavior_ids) : [];
+      const missed = result ? safeParse(result.missed_question_ids) : [];
       const status = result
-        ? `✅ 已提交 ${result.score}/${result.total}`
+        ? `✅ ${result.score}/${result.total}`
         : "⏳ 未自查";
-      const missedHtml =
-        result && missed.length
-          ? `<div>错过的 non-obvious behavior(证据):<ul>${missed
-              .map(
-                (id) =>
-                  `<li>${escapeHtml(id)} <a href="#/pr/${encodeURIComponent(
-                    quiz.repo
-                  )}/${quiz.pr}?t=${encodeURIComponent(quiz.token)}">见 quiz 页</a></li>`
-              )
-              .join("")}</ul></div>`
-          : "";
+      const missedHtml = result && missed.length
+        ? `<div class="missed">错题: ${missed.map((id) => escapeHtml(id)).join(" · ")}</div>`
+        : "";
       const prUrl = `https://gitcode.com/${quiz.repo}/pull/${quiz.pr}`;
-      return `<section class="card">
-        <h3>#${quiz.pr} · ${escapeHtml(quiz.repo)} · author: ${escapeHtml(
-          quiz.author
-        )} · head ${escapeHtml(quiz.head_sha.slice(0, 7))}</h3>
-        <div>状态: ${status} · 生成 ${escapeHtml(quiz.created_at)}</div>
+      return `<section class="q">
+        <div class="qlabel">#${quiz.pr} · ${escapeHtml(quiz.repo)} · ${escapeHtml(quiz.author)} · head ${escapeHtml(quiz.head_sha.slice(0, 7))}</div>
+        <div class="status">${status} · 生成 ${escapeHtml(quiz.created_at)}</div>
         ${missedHtml}
-        <div><a href="#/pr/${encodeURIComponent(quiz.repo)}/${quiz.pr}?t=${encodeURIComponent(
-          quiz.token
-        )}">→ 打开 quiz 页</a> · <a href="${prUrl}" target="_blank">→ GitCode PR</a></div>
+        <div class="links"><a href="#/pr/${encodeURIComponent(quiz.repo)}/${quiz.pr}?t=${encodeURIComponent(quiz.token)}">→ quiz 页</a> · <a href="${prUrl}" target="_blank">→ GitCode PR</a></div>
       </section>`;
     })
     .join("");
@@ -41,9 +32,5 @@ export async function renderDashboard(root, committer_token) {
 }
 
 function safeParse(s) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(s); } catch { return []; }
 }

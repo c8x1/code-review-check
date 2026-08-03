@@ -1,4 +1,3 @@
-import { renderReport } from "./report.js";
 import { loadQuizData, getQuizByToken, submitQuiz } from "./api.js";
 import { renderQuiz } from "./quiz-engine.js";
 
@@ -34,41 +33,32 @@ async function route() {
       alreadySubmitted = !!meta.has_result;
       data = await loadQuizData(meta.quiz_data_url);
     } else {
-      // read-only: explicit data path (?d=...) for preview without the Worker,
-      // else fall back to sample data (relative so it works locally and on Pages)
+      // read-only preview: explicit ?d= path, else sample
       const dpath = params.get("d");
       data = await loadQuizData(dpath ? decodeURIComponent(dpath) : `data/sample/${pr}-abc1234.json`);
     }
     if (!data) { root.innerHTML = `<main><p>quiz 数据未就绪。</p></main>`; return; }
     const main = document.createElement("main");
     root.appendChild(main);
-    renderReport(main, data);
-    const quizHost = document.createElement("div");
-    quizHost.id = "quiz-host";
-    main.appendChild(quizHost);
+    const host = document.createElement("div");
+    main.appendChild(host);
 
     if (alreadySubmitted) {
-      quizHost.innerHTML = `<section class="card"><p>该版本已提交,只记首交。结果见 dashboard。</p></section>`;
+      host.innerHTML = `<div class="q"><div class="verdict no">该版本已提交,只记首交。结果见 dashboard。</div></div>`;
     } else if (!token) {
-      // read-only: render the quiz for browsing but disable submit (no token)
-      renderQuiz(quizHost, data, {
+      renderQuiz(host, data, {
         token: null,
-        onSubmit: () => alert("只读视图:无法提交。请从 GitCode PR 评论中的链接进入。"),
+        onSubmit: () => alert("只读预览:无法提交。请从 GitCode PR 评论中的链接进入。"),
       });
     } else {
-      renderQuiz(quizHost, data, {
+      renderQuiz(host, data, {
         token,
         onSubmit: async (payload) => {
           const res = await submitQuiz(payload.token, payload.gitcode_username, payload);
-          if (res.status === 201) {
-            alert(`已记录: ${res.body.score}/${res.body.total} (${res.body.terminal})`);
-          } else if (res.status === 410) {
-            alert("已提交过,只记首交。");
-          } else if (res.status === 403) {
-            alert("账号名与 PR 作者不一致。");
-          } else {
-            alert("提交失败:" + (typeof res.body === "string" ? res.body : JSON.stringify(res.body)));
-          }
+          if (res.status === 201) alert(`已记录: ${res.body.score}/${res.body.total} (${res.body.terminal})`);
+          else if (res.status === 410) alert("已提交过,只记首交。");
+          else if (res.status === 403) alert("账号名与 PR 作者不一致。");
+          else alert("提交失败:" + (typeof res.body === "string" ? res.body : JSON.stringify(res.body)));
         },
       });
     }
@@ -79,4 +69,3 @@ async function route() {
 
 addEventListener("hashchange", route);
 addEventListener("DOMContentLoaded", route);
-
