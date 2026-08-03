@@ -27,7 +27,10 @@ function scrollTo(id) {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-// Editor-dark, code-first. One compact block per question.
+// Editor-dark, code-first. Answers are HIDDEN until the dev clicks 提交 —
+// clicking an option only locks the choice (no correct/wrong reveal, no
+// explanation), so the dev can't learn the right answers mid-quiz and
+// refresh-re-try for a perfect score.
 export function renderQuiz(container, data, { token, onSubmit }) {
   const qs = data.questions;
   const answers = {};
@@ -38,7 +41,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
   const repoShort = (data.repo || "").split("/").pop();
   topbar.innerHTML =
     `<span class="tb-left">${escapeHtml(repoShort)} #${escapeHtml(String(data.pr_number))} · ${escapeHtml(data.author || "")}</span>` +
-    `<span class="tb-score" id="scorebox">Score: 0 / ${qs.length} · 0 answered</span>`;
+    `<span class="tb-score" id="scorebox">已答 0 / ${qs.length}</span>`;
   container.appendChild(topbar);
 
   for (const q of qs) {
@@ -77,41 +80,105 @@ export function renderQuiz(container, data, { token, onSubmit }) {
       btn.addEventListener("click", () => {
         if (block.dataset.locked) return;
         block.dataset.locked = "1";
-        const correct = opt.id === q.correct_option;
-        btn.classList.add(correct ? "correct" : "wrong");
-        if (!correct) {
-          const c = block.querySelector(`button[data-opt="${q.correct_option}"]`);
-          if (c) c.classList.add("correct");
-        }
+        btn.classList.add("selected");
         answers[q.id] = opt.id;
         answered++;
-        const fb = document.createElement("div");
-        fb.className = "feedback";
-        if (correct) {
-          fb.textContent = q.reinforce || "正确。";
-        } else {
-          const back = document.createElement("a");
-          back.href = "javascript:void(0)";
-          back.textContent = "↺ 回看代码";
-          back.className = "back";
-          back.addEventListener("click", (e) => { e.preventDefault(); scrollTo(`qcode-${q.id}`); });
-          fb.innerHTML = `<span class="why">正确项:${q.correct_option}。${escapeHtml(q.explanation || "")}</span> `;
-          fb.appendChild(back);
+        document.getElementById("scorebox").textContent = `已答 ${answered} / ${qs.length}`;
+        if (answered === qs.length) {
+          submitBtn.disabled = false;
+          submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
         }
-        block.appendChild(fb);
-        const g = gradeQuiz(qs, answers);
-        document.getElementById("scorebox").textContent =
-          `Score: ${g.score} / ${qs.length} · ${answered} answered`;
-        if (answered === qs.length) renderTerminal(container, data, qs, answers, onSubmit, token);
       });
       opts.appendChild(btn);
     }
     container.appendChild(block);
   }
+
+  // Submit footer (disabled until all answered). Reveal happens only after submit.
+  const submitBtn = document.createElement("button");
+  submitBtn.className = "opt submit";
+  submitBtn.disabled = true;
+  submitBtn.textContent = "提交并揭晓答案";
+  const footer = document.createElement("section");
+  footer.className = "q footer";
+  footer.appendChild(submitBtn);
+  container.appendChild(footer);
+
+  submitBtn.addEventListener("click", async () => {
+    const g = gradeQuiz(qs, answers);
+    const payload = {
+      token,
+      answers,
+      score: g.score,
+      answered: Object.keys(answers).length,
+      total: g.total,
+      missed_behavior_ids: [],
+      missed_question_ids: g.missed_questions,
+    };
+    if (token) {
+      const uname = prompt("请输入你的 GitCode 账号名(须与 PR 作者一致):");
+      if (!uname) return;
+      payload.gitcode_username = uname;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = "提交中…";
+    let res;
+    try {
+      res = await onSubmit(payload);
+    } catch (e) {
+      submitBtn.textContent = "提交失败,重试";
+      submitBtn.disabled = false;
+      alert("提交失败:" + e);
+      return;
+    }
+    const status = res && res.status;
+    if (status === 201 || status === 410 || !token) {
+      reveal(qs, answers, g, data, footer, status === 410);
+    } else if (status === 403) {
+      submitBtn.textContent = "重新提交";
+      submitBtn.disabled = false;
+      alert("账号名与 PR 作者不一致。");
+    } else {
+      submitBtn.textContent = "重新提交";
+      submitBtn.disabled = false;
+      alert("提交失败:" + (typeof res.body === "string" ? res.body : JSON.stringify(res.body)));
+    }
+  });
 }
 
-function renderTerminal(container, data, qs, answers, onSubmit, token) {
-  const g = gradeQuiz(qs, answers);
+function reveal(qs, answers, g, data, footer, alreadySubmitted) {
+  // update scorebox to show the score
+  document.getElementById("scorebox").textContent = `Score: ${g.score} / ${g.total} · ${g.total} answered`;
+
+  // per-question: color correct/wrong + append feedback
+  for (const q of qs) {
+    const block = document.getElementById(`q-${q.id}`);
+    const chosen = answers[q.id];
+    const correct = chosen === q.correct_option;
+    for (const opt of q.options) {
+      const btn = block.querySelector(`button.opt[data-opt="${opt.id}"]`);
+      if (!btn) continue;
+      btn.classList.remove("selected");
+      if (opt.id === q.correct_option) btn.classList.add("correct");
+      else if (opt.id === chosen) btn.classList.add("wrong");
+    }
+    const fb = document.createElement("div");
+    fb.className = "feedback";
+    if (correct) {
+      fb.textContent = q.reinforce || "正确。";
+    } else {
+      const back = document.createElement("a");
+      back.href = "javascript:void(0)";
+      back.textContent = "↺ 回看代码";
+      back.className = "back";
+      back.addEventListener("click", (e) => { e.preventDefault(); scrollTo(`qcode-${q.id}`); });
+      fb.innerHTML = `<span class="why">正确项:${q.correct_option}。${escapeHtml(q.explanation || "")}</span> `;
+      fb.appendChild(back);
+    }
+    block.appendChild(fb);
+  }
+
+  // terminal card: verdict + chips + copy
   const card = document.createElement("section");
   card.className = "q terminal";
   if (g.terminal === "cleared") {
@@ -124,7 +191,12 @@ function renderTerminal(container, data, qs, answers, onSubmit, token) {
     card.querySelectorAll("a[data-q]").forEach((a) =>
       a.addEventListener("click", (e) => { e.preventDefault(); scrollTo(`q-${a.dataset.q}`); }));
   }
-  // Per-question result chips (the "summary figure") + a copy-as-PR-comment button.
+  if (alreadySubmitted) {
+    const note = document.createElement("div");
+    note.className = "missed";
+    note.textContent = "(该版本已提交过,只记首交。)";
+    card.appendChild(note);
+  }
   const chips = document.createElement("div");
   chips.className = "chips";
   chips.innerHTML = qs.map((q) => {
@@ -140,49 +212,20 @@ function renderTerminal(container, data, qs, answers, onSubmit, token) {
     const md = buildPrComment(data, qs, answers, g);
     const done = () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); };
     const fallback = () => {
-      // clipboard API failed (non-secure context / permissions): show a box to copy manually
       let box = card.querySelector("pre.copybox");
-      if (!box) {
-        box = document.createElement("pre");
-        box.className = "copybox";
-        card.appendChild(box);
-      }
-      box.textContent = md;
-      box.hidden = false;
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(box);
-      sel.removeAllRanges(); sel.addRange(range);
+      if (!box) { box = document.createElement("pre"); box.className = "copybox"; card.appendChild(box); }
+      box.textContent = md; box.hidden = false;
+      const sel = window.getSelection(); const range = document.createRange();
+      range.selectNodeContents(box); sel.removeAllRanges(); sel.addRange(range);
       copy.textContent = "已选中,按 Ctrl/Cmd+C 复制";
     };
     copyTextToClipboard(md, done, fallback);
   });
   card.appendChild(copy);
-
-  const submit = document.createElement("button");
-  submit.className = "opt submit";
-  submit.textContent = "提交结果(只记首交)";
-  submit.addEventListener("click", () => {
-    const gitcode_username = prompt("请输入你的 GitCode 账号名(须与 PR 作者一致):");
-    if (!gitcode_username) return;
-    onSubmit({
-      token,
-      gitcode_username,
-      answers,
-      score: g.score,
-      answered: Object.keys(answers).length,
-      total: g.total,
-      missed_behavior_ids: [],
-      missed_question_ids: g.missed_questions,
-    });
-  });
-  card.appendChild(submit);
-  container.appendChild(card);
+  footer.after(card);
 }
 
 function copyTextToClipboard(text, onOk, onFallback) {
-  // Prefer the async clipboard API (HTTPS / secure context). Fall back to a
-  // hidden textarea + execCommand, then to a visible box the user selects.
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(onOk, () => execCopy(text, onOk, onFallback));
   } else {
@@ -193,19 +236,11 @@ function copyTextToClipboard(text, onOk, onFallback) {
 function execCopy(text, onOk, onFallback) {
   try {
     const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand("copy");
-    ta.remove();
-    if (ok) onOk();
-    else onFallback();
-  } catch (e) {
-    onFallback();
-  }
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand("copy"); ta.remove();
+    if (ok) onOk(); else onFallback();
+  } catch (e) { onFallback(); }
 }
 
 function buildPrComment(data, qs, answers, g) {

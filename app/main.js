@@ -48,17 +48,14 @@ async function route() {
     } else if (!token) {
       renderQuiz(host, data, {
         token: null,
-        onSubmit: () => alert("只读预览:无法提交。请从 GitCode PR 评论中的链接进入。"),
+        onSubmit: async () => ({ status: 201 }),  // read-only: submit = client-side reveal
       });
     } else {
       renderQuiz(host, data, {
         token,
         onSubmit: async (payload) => {
           const res = await submitQuiz(payload.token, payload.gitcode_username, payload);
-          if (res.status === 201) alert(`已记录: ${res.body.score}/${res.body.total} (${res.body.terminal})`);
-          else if (res.status === 410) alert("已提交过,只记首交。");
-          else if (res.status === 403) alert("账号名与 PR 作者不一致。");
-          else alert("提交失败:" + (typeof res.body === "string" ? res.body : JSON.stringify(res.body)));
+          return { status: res.status, body: res.body };
         },
       });
     }

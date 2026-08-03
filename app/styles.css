@@ -29,7 +29,8 @@ pre.code{background:var(--code-bg);color:var(--code-ink);font:13px/1.5 var(--mon
   border:1px solid var(--line);border-radius:5px;background:var(--paper);
   cursor:pointer;font:13px/1.4 var(--sans);color:var(--ink);overflow:hidden;text-overflow:ellipsis}
 .opt:hover{border-color:var(--mute)}
-.opt:disabled{cursor:default}
+.opt:disabled{cursor:default;opacity:.5}
+.opt.selected{border-color:var(--mute);background:#f4f4f6}
 .opt.correct{border-color:var(--ok);background:rgba(63,185,80,.12);color:var(--ok)}
 .opt.wrong{border-color:var(--no);background:rgba(248,81,73,.10);color:var(--no)}
 .opt.submit{margin-top:10px;border-color:var(--no);color:var(--no);font-weight:600}
