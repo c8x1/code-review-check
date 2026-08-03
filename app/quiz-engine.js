@@ -121,6 +121,26 @@ function renderTerminal(container, qs, answers, onSubmit, token) {
     card.querySelectorAll("a[data-q]").forEach((a) =>
       a.addEventListener("click", (e) => { e.preventDefault(); scrollTo(`q-${a.dataset.q}`); }));
   }
+  // Per-question result chips (the "summary figure") + a copy-as-PR-comment button.
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  chips.innerHTML = qs.map((q) => {
+    const ok = answers[q.id] === q.correct_option;
+    return `<span class="chip ${ok ? "ok" : "no"}" title="${q.id} ${q.file}:${q.lines}">${q.id} ${ok ? "✓" : "✗"}</span>`;
+  }).join("");
+  card.appendChild(chips);
+
+  const copy = document.createElement("button");
+  copy.className = "opt copy";
+  copy.textContent = "复制为 PR 评论";
+  copy.addEventListener("click", () => {
+    const md = buildPrComment(data, qs, answers, g);
+    navigator.clipboard.writeText(md).then(
+      () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); },
+      () => alert("复制失败,请手动选择下方文本。"));
+  });
+  card.appendChild(copy);
+
   const submit = document.createElement("button");
   submit.className = "opt submit";
   submit.textContent = "提交结果(只记首交)";
@@ -140,4 +160,24 @@ function renderTerminal(container, qs, answers, onSubmit, token) {
   });
   card.appendChild(submit);
   container.appendChild(card);
+}
+
+function buildPrComment(data, qs, answers, g) {
+  const verdict = g.terminal === "cleared" ? "✅ 通过" : "⚠️ 未全对";
+  const rows = qs.map((q) => {
+    const ok = answers[q.id] === q.correct_option;
+    const file = (q.file || "").split("/").pop();
+    return `| ${q.id} | \`${file}:${q.lines}\` | ${ok ? "✅" : "❌"} |`;
+  }).join("\n");
+  return [
+    `## 📋 自查 quiz 结果 · ${data.repo}#${data.pr_number}`,
+    ``,
+    `**分数: ${g.score}/${g.total}** · ${verdict}`,
+    ``,
+    `| # | 位置 | 结果 |`,
+    `|---|---|---|`,
+    rows,
+    ``,
+    `> 由 code-review-check 生成 · ${location.href}`,
+  ].join("\n");
 }

@@ -42,3 +42,10 @@ pre.code{background:var(--code-bg);color:var(--code-ink);font:13px/1.5 var(--mon
 .terminal .verdict.ok{color:var(--ok)}
 .terminal .verdict.no{color:var(--no)}
 .missed a{color:var(--mute);font-family:var(--mono)}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.chip{font:12px var(--mono);padding:3px 7px;border-radius:4px;border:1px solid var(--line)}
+.chip.ok{color:var(--ok);border-color:var(--ok);background:rgba(63,185,80,.10)}
+.chip.no{color:var(--no);border-color:var(--no);background:rgba(248,81,73,.08)}
+.opt.copy{border-color:var(--mute);color:var(--mute)}
+.opt.copy:hover{border-color:var(--ink);color:var(--ink)}
