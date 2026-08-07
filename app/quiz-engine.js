@@ -229,6 +229,13 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
           qfeedback[q.id].reason = same ? "" : r;
           tags.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
           if (!same) b.classList.add("active");
+          // "我选错了" requires a written explanation (the committer wants the
+          // author's actual misunderstanding); the other two stand on their own.
+          ta.classList.toggle("req", !same && r === "我选错了");
+          ta.placeholder = (!same && r === "我选错了")
+            ? "必填:说明你为什么选错(理解偏差在哪)"
+            : "补充说明(可选):题面有歧义/答案有误/我的理解偏差…";
+          if (!same && r === "我选错了") setTimeout(() => ta.focus(), 50);
         });
         tags.appendChild(b);
       });
@@ -274,19 +281,26 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
   copy.className = "opt copy";
   copy.textContent = "复制为 PR 评论";
   copy.addEventListener("click", () => {
-    // Require the dev to clarify every wrong answer before copying — no silent
-    // submits where wrong answers carry no author rationale for the committer.
+    // Require a reason for every wrong answer; if the reason is "我选错了",
+    // also require a written explanation (the others — 题错了/答案错了 — stand alone).
     const wrongIds = qs.filter((q) => answers[q.id] !== q.correct_option).map((q) => q.id);
     const missing = wrongIds.filter((id) => {
       const fb = qfeedback[id];
-      return !fb || (!fb.reason && !(fb.text && fb.text.trim()));
+      if (!fb || !fb.reason) return true;                       // no reason picked
+      if (fb.reason === "我选错了" && !(fb.text && fb.text.trim())) return true;  // 我选错了 needs text
+      return false;
     });
     if (missing.length) {
+      const fb0 = qfeedback[missing[0]];
+      const needText = fb0 && fb0.reason === "我选错了";
+      const msg = needText
+        ? `选了"我选错了"的错题请补充说明为什么选错(你的理解偏差)。还剩 ${missing.length} 道未补全。`
+        : `还有 ${missing.length} 道错题未选择原因。请为每道错题选一个(题错了/答案错了/我选错了),其中"我选错了"需补充说明。`;
       const first = document.getElementById(`q-${missing[0]}`);
       if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
       const ta = first && first.querySelector(".qfb-text");
       if (ta) setTimeout(() => ta.focus(), 400);
-      alert(`还有 ${missing.length} 道错题未说明原因。请为每道错题选择原因(题错了/答案错了/我选错了)或补充说明,再复制。`);
+      alert(msg);
       return;
     }
     const md = buildPrComment(data, qs, answers, g, qfeedback);

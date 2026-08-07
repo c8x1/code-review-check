@@ -88,6 +88,8 @@ pre.code .nm{color:#fab387}          /* 数字 橙 */
 .qfb-text{width:100%;font:13px/1.4 var(--sans);padding:6px 8px;border:1px solid var(--line);
   border-radius:6px;background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 .qfb-text:focus{outline:none;border-color:var(--accent)}
+.qfb-text.req{border-color:var(--no);background:#fff5f5}
+.qfb-text.req:focus{border-color:var(--no)}
 
 .terminal{grid-column:1 / -1}           /* 终局卡横跨整行 */
 .terminal .verdict{font-weight:600;margin-bottom:4px}
