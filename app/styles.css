@@ -1,8 +1,8 @@
 :root{
   /* 冷靛配色 */
   --bg:#f4f6fb; --paper:#ffffff; --ink:#1a2233; --mute:#5a6478; --line:#d4dcf0;
-  /* ANSI 终端代码:黑底荧光绿,与页面配色无关 */
-  --code-bg:#000; --code-ink:#39ff14; --code-mute:#888;
+  /* 代码块:深色编辑器底 + 多色语法高亮(Catppuccin 风) */
+  --code-bg:#1e1e2e; --code-ink:#cdd6f4; --code-mute:#6c7086;
   --accent:#5a6fd8;            /* 选中态强调 */
   --div:#9aa6cc;               /* 题区间分割线(比 --line 更明显) */
   --ok:#3fb950; --no:#f85149;  /* 揭晓对/错 */
@@ -36,7 +36,14 @@ a{color:var(--accent);text-decoration:none}
 pre.code{background:var(--code-bg);color:var(--code-ink);
   font:var(--code-size)/1.5 var(--mono);
   padding:9px 11px;border-radius:6px;overflow:auto;margin:0 0 9px;white-space:pre;
-  flex:1 1 auto;min-height:200px}    /* 填满题区高度;底 200px */
+  flex:0 1 auto;min-height:200px}    /* 不随卡片撑高(免多余黑);底200,靠上下文填 */
+/* 语法 token 多色 */
+pre.code .kw{color:#cba6f7}          /* 关键字 紫 */
+pre.code .ty{color:#a6e3a1}          /* 类型 绿 */
+pre.code .st{color:#fab387}          /* 字符串 橙 */
+pre.code .cm{color:#6c7086;font-style:italic}  /* 注释 灰 */
+pre.code .fn{color:#f9e2af}          /* 函数 黄 */
+pre.code .nm{color:#fab387}          /* 数字 橙 */
 .prompt{font-size:var(--body-size);margin:4px 0 9px}
 
 /* 选项 2×2 */
