@@ -178,6 +178,8 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
   // update scorebox to show the score
   document.getElementById("scorebox").textContent = `Score: ${g.score} / ${g.total} · ${g.total} answered`;
 
+  const qfeedback = {};   // {qid: {reason, text}} — dev self-explanation for wrong answers
+
   // per-question: color correct/wrong + append feedback
   for (const q of qs) {
     const block = document.getElementById(`q-${q.id}`);
@@ -204,6 +206,41 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
       fb.appendChild(back);
     }
     block.appendChild(fb);
+
+    // For wrong answers: a self-explanation box the dev fills in (题错了/答案错了/我选错了 + 自由文本),
+    // folded into the copy-back PR comment so the committer sees the author's take on each miss.
+    if (!correct) {
+      qfeedback[q.id] = { reason: "", text: "" };
+      const qfb = document.createElement("div");
+      qfb.className = "qfb";
+      const label = document.createElement("span");
+      label.className = "qfb-label";
+      label.textContent = "说明这道错题(随结果一起贴回 PR,供 committer 看):";
+      qfb.appendChild(label);
+      const tags = document.createElement("div");
+      tags.className = "qfb-tags";
+      ["题错了", "答案错了", "我选错了"].forEach((r) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "qfb-tag";
+        b.textContent = r;
+        b.addEventListener("click", () => {
+          const same = qfeedback[q.id].reason === r;
+          qfeedback[q.id].reason = same ? "" : r;
+          tags.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+          if (!same) b.classList.add("active");
+        });
+        tags.appendChild(b);
+      });
+      qfb.appendChild(tags);
+      const ta = document.createElement("textarea");
+      ta.className = "qfb-text";
+      ta.rows = 2;
+      ta.placeholder = "补充说明(可选):题面有歧义/答案有误/我的理解偏差…";
+      ta.addEventListener("input", () => { qfeedback[q.id].text = ta.value; });
+      qfb.appendChild(ta);
+      block.appendChild(qfb);
+    }
   }
 
   // terminal card: verdict + chips + copy
@@ -237,7 +274,7 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
   copy.className = "opt copy";
   copy.textContent = "复制为 PR 评论";
   copy.addEventListener("click", () => {
-    const md = buildPrComment(data, qs, answers, g);
+    const md = buildPrComment(data, qs, answers, g, qfeedback);
     const done = () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); };
     const fallback = () => {
       let box = card.querySelector("pre.copybox");
@@ -271,21 +308,34 @@ function execCopy(text, onOk, onFallback) {
   } catch (e) { onFallback(); }
 }
 
-function buildPrComment(data, qs, answers, g) {
+function buildPrComment(data, qs, answers, g, qfeedback = {}) {
   const verdict = g.terminal === "cleared" ? "✅ 通过" : "⚠️ 未全对";
+  const fmtFb = (fb) => {
+    if (!fb) return "";
+    const parts = [];
+    if (fb.reason) parts.push(fb.reason);
+    if (fb.text && fb.text.trim()) parts.push(fb.text.trim());
+    return parts.join("；").replace(/\|/g, "\\|");
+  };
   const rows = qs.map((q) => {
     const ok = answers[q.id] === q.correct_option;
     const file = (q.file || "").split("/").pop();
-    return `| ${q.id} | \`${file}:${q.lines}\` | ${ok ? "✅" : "❌"} |`;
+    const note = ok ? "—" : (fmtFb(qfeedback[q.id]) || "—");
+    return `| ${q.id} | \`${file}:${q.lines}\` | ${ok ? "✅" : "❌"} | ${note} |`;
   }).join("\n");
+  const missNotes = qs
+    .filter((q) => answers[q.id] !== q.correct_option && fmtFb(qfeedback[q.id]))
+    .map((q) => `- **${q.id}** (${(q.file || "").split("/").pop()}:${q.lines}): ${fmtFb(qfeedback[q.id])}`)
+    .join("\n");
   return [
     `## 📋 自查 quiz 结果 · ${data.repo}#${data.pr_number}`,
     ``,
     `**分数: ${g.score}/${g.total}** · ${verdict}`,
     ``,
-    `| # | 位置 | 结果 |`,
-    `|---|---|---|`,
+    `| # | 位置 | 结果 | 作者说明 |`,
+    `|---|---|---|---|`,
     rows,
+    ...(missNotes ? ["", "**错题说明:**", missNotes] : []),
     ``,
     `> 由 code-review-check 生成 · ${location.href}`,
   ].join("\n");

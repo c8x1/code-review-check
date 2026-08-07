@@ -77,6 +77,18 @@ pre.code .nm{color:#fab387}          /* 数字 橙 */
 .feedback .why{color:var(--ink)}
 .feedback .back{margin-left:8px;color:var(--mute)}
 
+/* 错题自说明区(贴回 PR 评论) */
+.qfb{margin-top:9px;padding:9px 11px;background:#eef1f8;border:1px solid var(--line);border-radius:6px}
+.qfb-label{font:12px var(--sans);color:var(--mute);display:block;margin-bottom:6px}
+.qfb-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.qfb-tag{font:12px var(--sans);padding:3px 10px;border:1px solid var(--line);border-radius:999px;
+  background:var(--paper);cursor:pointer;color:var(--ink)}
+.qfb-tag:hover{border-color:var(--mute)}
+.qfb-tag.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.qfb-text{width:100%;font:13px/1.4 var(--sans);padding:6px 8px;border:1px solid var(--line);
+  border-radius:6px;background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
+.qfb-text:focus{outline:none;border-color:var(--accent)}
+
 .terminal{grid-column:1 / -1}           /* 终局卡横跨整行 */
 .terminal .verdict{font-weight:600;margin-bottom:4px}
 .terminal .verdict.ok{color:var(--ok)}
