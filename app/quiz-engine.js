@@ -22,6 +22,27 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+// Multi-color C/C++ syntax highlight (single-pass scanner, HTML-safe).
+const _TK = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|(\b(?:void|if|else|return|true|false|auto|const|new|class|public|private|protected|virtual|override|static|namespace|using|template|typename|for|while|break|continue|switch|case|default|enum|struct|typedef|sizeof|nullptr)\b)|(\b(?:Hpae[A-Za-z]*|FadeOutState|FadeState|shared_ptr|make_shared|make_unique|unique_ptr|int32_t|uint32_t|int8_t|int|bool|size_t|float|double|char|std|void)\b)|(\b[A-Za-z_]\w*(?=\s*\())|(\b\d+\.?\d*f?\b)/g;
+function highlight(code) {
+  return code.split("\n").map((line) => {
+    if (/^\s*$/.test(line)) return "";
+    if (/^\s*\/\//.test(line)) return `<span class="cm">${escapeHtml(line)}</span>`;
+    let out = "", last = 0, m;
+    _TK.lastIndex = 0;
+    while ((m = _TK.exec(line))) {
+      if (m.index > last) out += escapeHtml(line.slice(last, m.index));
+      const tok = escapeHtml(m[0]);
+      const cls = m[1] ? "cm" : m[2] ? "st" : m[3] ? "kw" : m[4] ? "ty" : m[5] ? "fn" : m[6] ? "nm" : "";
+      out += cls ? `<span class="${cls}">${tok}</span>` : tok;
+      last = m.index + m[0].length;
+      if (!m[0]) _TK.lastIndex++;
+    }
+    if (last < line.length) out += escapeHtml(line.slice(last));
+    return out;
+  }).join("\n");
+}
+
 function scrollTo(id) {
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -44,6 +65,10 @@ export function renderQuiz(container, data, { token, onSubmit }) {
     `<span class="tb-score" id="scorebox">已答 0 / ${qs.length}</span>`;
   container.appendChild(topbar);
 
+  const grid = document.createElement("div");
+  grid.className = "qgrid";
+  container.appendChild(grid);
+
   for (const q of qs) {
     const block = document.createElement("section");
     block.className = "q";
@@ -59,7 +84,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
       pre.className = "code";
       pre.id = `qcode-${q.id}`;
       const code = document.createElement("code");
-      code.textContent = q.code;
+      code.innerHTML = highlight(q.code);
       pre.appendChild(code);
       block.appendChild(pre);
     }
@@ -75,7 +100,10 @@ export function renderQuiz(container, data, { token, onSubmit }) {
     for (const opt of q.options) {
       const btn = document.createElement("button");
       btn.className = "opt";
-      btn.textContent = opt.text;
+      const ot = document.createElement("span");
+      ot.className = "ot";
+      ot.textContent = opt.text;
+      btn.appendChild(ot);
       btn.dataset.opt = opt.id;
       btn.addEventListener("click", () => {
         if (block.dataset.locked) return;
@@ -91,7 +119,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
       });
       opts.appendChild(btn);
     }
-    container.appendChild(block);
+    grid.appendChild(block);
   }
 
   // Submit footer (disabled until all answered). Reveal happens only after submit.
@@ -102,7 +130,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
   const footer = document.createElement("section");
   footer.className = "q footer";
   footer.appendChild(submitBtn);
-  container.appendChild(footer);
+  grid.appendChild(footer);
 
   submitBtn.addEventListener("click", async () => {
     const g = gradeQuiz(qs, answers);
