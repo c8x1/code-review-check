@@ -16,7 +16,7 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:var(--body-size)/1.5 var(--sans);
   -webkit-font-smoothing:antialiased}
 /* 全宽,两边不留白 */
-main{max-width:none;margin:0;padding:0 0 60px}
+main{max-width:none;margin:0;padding:0 28px 60px}     /* 左右稍微留白 */
 h1{font-size:15px;font-weight:600;margin:0 0 4px}
 a{color:var(--accent);text-decoration:none}
 
@@ -30,13 +30,13 @@ a{color:var(--accent);text-decoration:none}
 .qgrid{display:grid;grid-template-columns:1fr 1fr;gap:0}
 @media(max-width:720px){ .qgrid{grid-template-columns:1fr} }  /* 窄屏兜底单列 */
 .q{background:var(--paper);border-right:1px solid var(--div);border-bottom:1px solid var(--div);
-  padding:12px 14px}                        /* 舒适密度 */
+  padding:12px 14px;display:flex;flex-direction:column}  /* 舒适密度;flex 让代码块填满 */
 .qgrid .q:nth-child(2n){border-right:none}
 .qlabel{font:11px var(--mono);color:var(--mute);margin:0 0 7px;word-break:break-all}
 pre.code{background:var(--code-bg);color:var(--code-ink);
   font:var(--code-size)/1.5 var(--mono);
   padding:9px 11px;border-radius:6px;overflow:auto;margin:0 0 9px;white-space:pre;
-  height:200px}            /* 代码块定高 → 各题区域等高 */
+  flex:1 1 auto;min-height:200px}    /* 填满题区高度;底 200px */
 .prompt{font-size:var(--body-size);margin:4px 0 9px}
 
 /* 选项 2×2 */
