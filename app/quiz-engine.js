@@ -149,7 +149,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
       payload.gitcode_username = uname;
     }
     submitBtn.disabled = true;
-    submitBtn.textContent = "提交中…";
+    submitBtn.textContent = "提交完成";
     let res;
     try {
       res = await onSubmit(payload);
@@ -274,6 +274,21 @@ function reveal(qs, answers, g, data, footer, alreadySubmitted) {
   copy.className = "opt copy";
   copy.textContent = "复制为 PR 评论";
   copy.addEventListener("click", () => {
+    // Require the dev to clarify every wrong answer before copying — no silent
+    // submits where wrong answers carry no author rationale for the committer.
+    const wrongIds = qs.filter((q) => answers[q.id] !== q.correct_option).map((q) => q.id);
+    const missing = wrongIds.filter((id) => {
+      const fb = qfeedback[id];
+      return !fb || (!fb.reason && !(fb.text && fb.text.trim()));
+    });
+    if (missing.length) {
+      const first = document.getElementById(`q-${missing[0]}`);
+      if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      const ta = first && first.querySelector(".qfb-text");
+      if (ta) setTimeout(() => ta.focus(), 400);
+      alert(`还有 ${missing.length} 道错题未说明原因。请为每道错题选择原因(题错了/答案错了/我选错了)或补充说明,再复制。`);
+      return;
+    }
     const md = buildPrComment(data, qs, answers, g, qfeedback);
     const done = () => { copy.textContent = "已复制 ✓"; setTimeout(() => (copy.textContent = "复制为 PR 评论"), 1800); };
     const fallback = () => {

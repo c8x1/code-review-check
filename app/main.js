@@ -1,5 +1,5 @@
 import { loadQuizData, getQuizByToken, submitQuiz } from "./api.js";
-import { renderQuiz } from "./quiz-engine.js?v=5";
+import { renderQuiz } from "./quiz-engine.js?v=6";
 
 const root = document.getElementById("app");
 
