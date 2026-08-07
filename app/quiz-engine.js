@@ -44,6 +44,10 @@ export function renderQuiz(container, data, { token, onSubmit }) {
     `<span class="tb-score" id="scorebox">已答 0 / ${qs.length}</span>`;
   container.appendChild(topbar);
 
+  const grid = document.createElement("div");
+  grid.className = "qgrid";
+  container.appendChild(grid);
+
   for (const q of qs) {
     const block = document.createElement("section");
     block.className = "q";
@@ -75,7 +79,10 @@ export function renderQuiz(container, data, { token, onSubmit }) {
     for (const opt of q.options) {
       const btn = document.createElement("button");
       btn.className = "opt";
-      btn.textContent = opt.text;
+      const ot = document.createElement("span");
+      ot.className = "ot";
+      ot.textContent = opt.text;
+      btn.appendChild(ot);
       btn.dataset.opt = opt.id;
       btn.addEventListener("click", () => {
         if (block.dataset.locked) return;
@@ -91,7 +98,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
       });
       opts.appendChild(btn);
     }
-    container.appendChild(block);
+    grid.appendChild(block);
   }
 
   // Submit footer (disabled until all answered). Reveal happens only after submit.
@@ -102,7 +109,7 @@ export function renderQuiz(container, data, { token, onSubmit }) {
   const footer = document.createElement("section");
   footer.className = "q footer";
   footer.appendChild(submitBtn);
-  container.appendChild(footer);
+  grid.appendChild(footer);
 
   submitBtn.addEventListener("click", async () => {
     const g = gradeQuiz(qs, answers);
